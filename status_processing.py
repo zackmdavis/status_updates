@@ -5,6 +5,7 @@
 # Python stdlib imports
 import argparse
 import csv
+import itertools
 import logging
 import string
 
@@ -32,26 +33,33 @@ def to_sentences(text):
                if not all(char in string.punctuation for char in word)]
 
 
-class SentenceIterable:
-    """Given the path to a CSV and the name of the CSV column that
-    contains text, iterate over sentences as suitable for input into
-    the gensim Word2Vec model."""
-    def __init__(self, csv_path, text_fieldname, sentencizer, limit=None):
-        self.csv_path = csv_path  # path to our CSV
-        self.text_fieldname = text_fieldname  # name of column within CSV that contains our text
-        self.sentencizer = sentencizer  # callable that yields sentences given text
-        self.limit = limit  # maximum number of rows to process (useful for testing less than the full dataset)
+class TaggedSentenceIterable:
+    def __init__(self, csv_path, tag_fieldname, text_fieldname,
+                 sentencizer, limit=None):
+        # path to our CSV
+        self.csv_path = csv_path
+        # name of column within CSV that contains tag (e.g., author) for text
+        self.tag_fieldname = tag_fieldname
+        # name of column within CSV that contains our text
+        self.text_fieldname = text_fieldname
+        # callable that yields sentences given text
+        self.sentencizer = sentencizer
+        # maximum number of rows to process (useful for testing less than the
+        # full dataset)
+        self.limit = limit
 
     def __iter__(self):
         count = 0
         with open(self.csv_path) as our_csv:
             reader = csv.reader(our_csv)
             header = next(reader)
+            tag_field_index = header.index(self.tag_fieldname)
             text_field_index = header.index(self.text_fieldname)
 
             for row in reader:
+                tag = row[tag_field_index]
                 text = row[text_field_index]
-                yield from self.sentencizer(text)
+                yield from zip(itertools.repeat(tag), self.sentencizer(text))
                 count += 1
 
                 if count % 5000 == 0:
@@ -62,10 +70,27 @@ class SentenceIterable:
                         break
 
 
+class SentenceIterable(TaggedSentenceIterable):
+    """Given the path to a CSV and the name of the CSV column that
+    contains text, iterate over sentences as suitable for input into
+    the gensim Word2Vec model."""
+    def __init__(self, csv_path, text_fieldname,
+                 sentencizer, limit=None):
+        super().__init__(csv_path,
+                         # "tag" is ignored here, so just reuse text fieldname
+                         text_fieldname,
+                         text_fieldname,
+                         sentencizer, limit)
+
+    def __iter__(self):
+        for _tag, sentence in super().__iter__():
+            yield sentence
+
+
 def build_model(csv_path, text_fieldname, limit=None, **kwargs):
     return gensim.models.Word2Vec(
-        SentenceIterable(csv_path, text_fieldname, to_sentences,
-                         limit=limit, **kwargs)
+        SentenceIterable(csv_path, text_fieldname, to_sentences, limit=limit),
+        **kwargs
     )
 
 
