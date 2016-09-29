@@ -62,15 +62,21 @@ class SentenceIterable:
                         break
 
 
-def build_model(csv_path, text_fieldname, limit=None):
-    return gensim.models.Word2Vec(SentenceIterable(csv_path, text_fieldname, to_sentences, limit=limit))
+def build_model(csv_path, text_fieldname, limit=None, **kwargs):
+    return gensim.models.Word2Vec(
+        SentenceIterable(csv_path, text_fieldname, to_sentences,
+                         limit=limit, **kwargs)
+    )
 
 
 if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description=__doc__)
-    arg_parser.add_argument("n", type=int, nargs='?', default=20000, help="number of rows to process (entire dataset==25407762)")
+    arg_parser.add_argument("n", type=int, nargs='?', default=20000,
+                            help=("number of rows to process "
+                                  "(entire dataset==25407762)"))
     args = arg_parser.parse_args()
-    model = build_model("status_updates.csv", "message", args.n)
+    model = build_model("status_updates.csv", "message",
+                        limit=args.n, min_count=150)
     print("model is available in variable 'model'")
     # drop into an IPython shell for exploration
     IPython.embed()
