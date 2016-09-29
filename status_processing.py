@@ -13,6 +13,7 @@ import gensim
 import nltk.data
 import IPython
 from nltk.tokenize import wordpunct_tokenize
+from nltk.stem.wordnet import WordNetLemmatizer
 
 
 logging.basicConfig(level=logging.INFO)
@@ -21,11 +22,14 @@ logging.basicConfig(level=logging.INFO)
 # XXX TODO: don't load this in global scope (`--help` is weirdly slow)
 sentence_detector = nltk.data.load('tokenizers/punkt/english.pickle')
 
+
 def to_sentences(text):
+    lematizer = WordNetLemmatizer()
     sentence_strings = sentence_detector.tokenize(text)
     sentence_lists = [wordpunct_tokenize(sentence) for sentence in sentence_strings]
     for sentence in sentence_lists:
-        yield [word for word in sentence if not all(char in string.punctuation for char in word)]
+        yield [lematizer.lemmatize(word.lower()) for word in sentence
+               if not all(char in string.punctuation for char in word)]
 
 
 class SentenceIterable:
