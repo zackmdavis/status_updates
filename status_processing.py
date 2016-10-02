@@ -8,6 +8,7 @@ import csv
 import itertools
 import logging
 import string
+from collections import Counter, defaultdict
 
 # third-party library imports
 import gensim
@@ -34,6 +35,11 @@ def to_sentences(text):
 
 
 class TaggedSentenceIterable:
+    """Given the path to a CSV and the name of the CSV column that contains
+    text, iterate over sentences as suitable for input into the gensim Word2Vec
+    model. Also, internally keep a tally of how many times each word was used
+    in rows with a given tag."""
+
     def __init__(self, csv_path, tag_fieldname, text_fieldname,
                  sentencizer, limit=None):
         # path to our CSV
@@ -47,6 +53,12 @@ class TaggedSentenceIterable:
         # maximum number of rows to process (useful for testing less than the
         # full dataset)
         self.limit = limit
+        # word counts per tag
+        self.tag_word_counts = defaultdict(lambda: Counter())
+        # flag indicates whether per-tag word count has already been done and
+        # should not double-count just because we're __iter__ating over the
+        # corpus again
+        self.revisiting = False
 
     def __iter__(self):
         count = 0
@@ -59,7 +71,11 @@ class TaggedSentenceIterable:
             for row in reader:
                 tag = row[tag_field_index]
                 text = row[text_field_index]
-                yield from zip(itertools.repeat(tag), self.sentencizer(text))
+                for sentence in self.sentencizer(text):
+                    if not self.revisiting:
+                        for word in sentence:
+                            self.tag_word_counts[tag][word] += 1
+                    yield sentence
                 count += 1
 
                 if count % 5000 == 0:
@@ -67,31 +83,20 @@ class TaggedSentenceIterable:
 
                 if self.limit is not None:
                     if count >= self.limit:
+                        self.revisiting = True
                         break
 
-
-class SentenceIterable(TaggedSentenceIterable):
-    """Given the path to a CSV and the name of the CSV column that
-    contains text, iterate over sentences as suitable for input into
-    the gensim Word2Vec model."""
-    def __init__(self, csv_path, text_fieldname,
-                 sentencizer, limit=None):
-        super().__init__(csv_path,
-                         # "tag" is ignored here, so just reuse text fieldname
-                         text_fieldname,
-                         text_fieldname,
-                         sentencizer, limit)
-
-    def __iter__(self):
-        for _tag, sentence in super().__iter__():
-            yield sentence
+            self.revisiting = True
 
 
-def build_model(csv_path, text_fieldname, limit=None, **kwargs):
-    return gensim.models.Word2Vec(
-        SentenceIterable(csv_path, text_fieldname, to_sentences, limit=limit),
-        **kwargs
-    )
+
+def perform_modeling(csv_path, tag_fieldname, text_fieldname,
+                     limit=None, **kwargs):
+    corpus = TaggedSentenceIterable(csv_path, tag_fieldname,
+                                    text_fieldname, to_sentences,
+                                    limit=limit)
+    model = gensim.models.Word2Vec(corpus, **kwargs)
+    return model, corpus.tag_word_counts
 
 
 if __name__ == "__main__":
@@ -100,8 +105,11 @@ if __name__ == "__main__":
                             help=("number of rows to process "
                                   "(entire dataset==25407762)"))
     args = arg_parser.parse_args()
-    model = build_model("status_updates.csv", "message",
-                        limit=args.n, min_count=150)
-    print("model is available in variable 'model'")
+    model, user_word_counts = perform_modeling(
+        "status_updates.csv", "userid", "message",
+        limit=args.n, min_count=150
+    )
+    print("model is available in variable `model`")
+    print("user word counts are available in variable `user_word_counts`")
     # drop into an IPython shell for exploration
     IPython.embed()
