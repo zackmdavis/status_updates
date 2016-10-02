@@ -99,6 +99,13 @@ def perform_modeling(csv_path, tag_fieldname, text_fieldname,
     return model, corpus.tag_word_counts
 
 
+def vectorize_users(model, user_word_counts):
+    return {user_id: sum(count * model[word]
+                         for word, count in word_counts.items()
+                         if word in model)
+            for user_id, word_counts in user_word_counts.items()}
+
+
 if __name__ == "__main__":
     arg_parser = argparse.ArgumentParser(description=__doc__)
     arg_parser.add_argument("n", type=int, nargs='?', default=20000,
@@ -109,7 +116,9 @@ if __name__ == "__main__":
         "status_updates.csv", "userid", "message",
         limit=args.n, min_count=150
     )
+    users = vectorize_users(model, user_word_counts)
     print("model is available in variable `model`")
     print("user word counts are available in variable `user_word_counts`")
+    print("user vectors are available in variable `users`")
     # drop into an IPython shell for exploration
     IPython.embed()
